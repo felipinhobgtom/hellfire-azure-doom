@@ -1,8 +1,35 @@
+const canvas = document.querySelector('#canvas');
+const frame = document.querySelector('.frame');
+const fullscreenButton = document.querySelector('#fullscreen');
+
+function requestMouseCapture() {
+  if (document.pointerLockElement === canvas || !canvas.requestPointerLock) return;
+  const request = canvas.requestPointerLock();
+  if (request && typeof request.catch === 'function') request.catch(() => {});
+}
+
+canvas.addEventListener('pointerdown', requestMouseCapture);
+fullscreenButton.addEventListener('click', () => {
+  requestMouseCapture();
+  if (document.fullscreenElement) {
+    document.exitFullscreen().catch(() => {});
+  } else {
+    frame.requestFullscreen().catch(() => {});
+  }
+});
+document.addEventListener('pointerlockchange', () => {
+  document.querySelector('#wasm-status').textContent =
+    document.pointerLockElement === canvas ? 'MOUSE PRESO' : 'DOOM';
+});
+document.addEventListener('fullscreenchange', () => {
+  fullscreenButton.textContent = document.fullscreenElement ? 'SAIR DA TELA CHEIA' : 'TELA CHEIA';
+});
+
 window.Module = {
-  canvas: document.querySelector('#canvas'),
+  canvas,
   noInitialRun: true,
-  arguments: ['-warp', '1', '-skill', '3', '-iwad', '/freedoom1.wad', '-window', '-nogui', '-nomusic',
-    '-config', '/doombrowser.cfg', '-nograbmouse'],
+  arguments: ['-warp', '1', '-skill', '3', '-iwad', '/freedoom1.wad', '-nogui', '-nomusic',
+    '-config', '/doombrowser.cfg'],
   locateFile: path => `/doom/${path}`,
   print: text => console.log(text),
   printErr(text) {

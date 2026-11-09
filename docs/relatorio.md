@@ -42,7 +42,7 @@ sequenceDiagram
     A-->>W: 201 Created + JSON
 ```
 
-Chocolate Doom e Freedoom são carregados automaticamente pela página. O SDL2/Emscripten recebe teclado e mouse diretamente no canvas; o elemento mantém o ID `canvas` exigido pelo backend de vídeo SDL Emscripten. A interface mostra o ranking da API; clientes registram resultados com `POST /api/scores`.
+Chocolate Doom e Freedoom são carregados automaticamente. Para capturar o mouse, o cliente solicita pointer lock em uma interação do usuário: clique no canvas ou use o botão de tela cheia, que também ativa fullscreen do navegador. O SDL2/Emscripten recebe teclado e mouse diretamente no canvas, que mantém o ID `canvas` exigido pelo backend de vídeo SDL.
 
 ## 3. Banco de dados e contrato HTTP
 
