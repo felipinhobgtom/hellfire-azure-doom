@@ -7,7 +7,7 @@ from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
-from reportlab.platypus import Flowable, Paragraph, Preformatted, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import Flowable, Image, Paragraph, Preformatted, SimpleDocTemplate, Spacer, Table, TableStyle
 
 ROOT = Path(__file__).resolve().parents[1]
 lines = (ROOT / "docs/relatorio.md").read_text(encoding="utf-8").splitlines()
@@ -68,6 +68,12 @@ story=[]
 index=0
 while index < len(lines):
     line=lines[index]
+    image = re.fullmatch(r"!\[([^\]]*)\]\(([^)]+)\)", line)
+    if image:
+        visual = Image(str(ROOT / "docs" / image.group(2)), width=170*mm, height=125*mm, kind="proportional")
+        visual.hAlign = "CENTER"
+        story += [Spacer(1,4), visual, Paragraph(escape(image.group(1)), styles["BodyCustom"]), Spacer(1,8)]
+        index += 1; continue
     if line.startswith("```"):
         block=[]; index+=1
         while index < len(lines) and not lines[index].startswith("```"):

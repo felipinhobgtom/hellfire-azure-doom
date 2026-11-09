@@ -91,39 +91,140 @@ SQLite cria a tabela na primeira requisição. `PRAGMA journal_mode=WAL` melhora
 - CORS não é necessário: frontend e API são servidos pela mesma origem.
 - Conteúdo de DOOM/IWAD e marcas/trademarks não são redistribuídos; a experiência atual é uma implementação independente.
 
-## 6. Implantação passo a passo
+## 6. Implantação passo a passo com ARM + Azure CLI
 
-### Pré-requisitos
+Este procedimento cria uma cópia própria do projeto na sua assinatura Azure. Funciona em Windows PowerShell e Linux Bash e usa a Azure CLI para enviar diretamente o template ARM público; não requer Nix, Docker local, Git ou GitHub CLI. Durante o bootstrap, a VM clona o repositório público. Não use este caminho para código privado sem alterar a estratégia de acesso do template.
 
-Pré-requisitos para implantação: Azure CLI instalado em qualquer máquina (Linux, macOS, Windows/WSL ou Azure Cloud Shell), sessão/autorização Azure com permissões para criar VM, rede, IP e Storage, e cota disponível para SKU B-series. O código precisa estar em repositório GitHub **público** porque cloud-init clona a URL no bootstrap. GitHub CLI é usado apenas para publicar o repositório, não para implantar. Nix é opcional.
+### 6.1 Pré-requisitos e custos
 
-Esta assinatura de estudante permite somente `brazilsouth`, `mexicocentral`, `chilecentral`, `spaincentral` e `southcentralus`; verifique a política/cota da sua assinatura. Na tentativa de deploy, `Standard_B1s` e `Standard_B2s` estavam sem capacidade em Brazil South. O deploy público foi feito em `mexicocentral`, `Standard_B1s`, com o hostname `hellfire-azure-doom-felipinhobgtom.mexicocentral.cloudapp.azure.com`. Para outra conta, configure `AZURE_LOCATION`, `AZURE_VM_SIZE` e, se o rótulo estiver ocupado na região, `AZURE_DNS_LABEL`; a disponibilidade de capacidade muda.
+- Azure CLI instalado: [Windows](https://learn.microsoft.com/cli/azure/install-azure-cli-windows) ou [Linux](https://learn.microsoft.com/cli/azure/install-azure-cli-linux).
+- Assinatura Azure ativa, sessão autenticada e autorização para criar Resource Group, VM, rede/IP público e Storage Account.
+- Cota/capacidade regional para `Standard_B1s` (padrão) ou `Standard_B2s`; ambos são os únicos tamanhos aceitos pelo ARM atual.
+- Senha forte para a conta local `azureuser`: mínimo de 12 caracteres com maiúscula, minúscula, número e símbolo. O parâmetro é `secureString`; o NSG não libera SSH.
+- Acesso à Internet para Azure e ao repositório público GitHub.
 
-### Publicar e deploy
+Recursos ligados podem gerar custos por hora, disco e rede. Não existe garantia de nível gratuito. Preços/cotas dependem da região e assinatura; consulte a [calculadora de preços do Azure](https://azure.microsoft.com/pricing/calculator/) antes do deploy. Ao terminar, exclua o grupo de recursos criado.
 
-```bash
-# Opcional: publicar a partir da raiz do projeto
-gh repo create hellfire-azure-doom --public --source=. --remote=origin --push
+### 6.2 Autenticar e escolher a assinatura
 
-# Disponha az-cli no PATH e autentique (az login no workstation; Cloud Shell já autenticada)
+Execute no PowerShell ou Bash:
+
+```text
 az login
-az account show
-export AZURE_VM_PASSWORD='Senha-forte-que-atenda-a-politica'
-export AZURE_DNS_LABEL='hellfire-azure-doom-felipinhobgtom' # opcional; o ARM usa este rótulo DNS
-./deploy.sh
+az account list --output table
+az account set --subscription "<ID-OU-NOME-DA-SUBSCRICAO>"
+az account show --output table
 ```
 
-O script cria o grupo e chama `az deployment group create` com `infra/main.json` e `infra/parameters.json`. A saída apresenta `websiteUrl` (HTTPS), `dnsFqdn`, `publicIp`, `storageAccount` e `vmSize`. A VM inicia cloud-init, que sobe o proxy Caddy e solicita o certificado público; aguarde alguns minutos e então teste:
+Em Azure Cloud Shell, a sessão costuma já estar autenticada. Confira a assinatura ativa antes de criar recursos.
+
+### 6.3 Enviar o template ARM
+
+O template está em `infra/main.json` e também pode ser buscado diretamente do branch `main`. Ele recebe `adminPassword` como segredo, `repositoryUrl` público, `dnsLabel` exclusivo e `vmSize`. O Resource Group determina a localização; o nome padrão da VM é `hellfire-vm`. O rótulo DNS deve ser único; se Azure rejeitar, gere outro e execute novamente.
+
+#### Windows — PowerShell
+
+```powershell
+$ResourceGroup = "rg-hellfire-demo"
+$Location = "brazilsouth"
+$DnsLabel = "hellfire-doom-$((Get-Random -Minimum 10000 -Maximum 99999))"
+$TemplateUri = "https://raw.githubusercontent.com/felipinhobgtom/hellfire-azure-doom/main/infra/main.json"
+$RepositoryUrl = "https://github.com/felipinhobgtom/hellfire-azure-doom.git"
+
+az group create --name $ResourceGroup --location $Location --output table
+
+$SecurePassword = Read-Host "Senha forte para azureuser" -AsSecureString
+$VmPassword = [System.Net.NetworkCredential]::new("", $SecurePassword).Password
+$WebsiteUrl = az deployment group create `
+  --resource-group $ResourceGroup `
+  --name ("hellfire-" + (Get-Date -Format "yyyyMMddHHmmss")) `
+  --template-uri $TemplateUri `
+  --parameters "adminPassword=$VmPassword" "repositoryUrl=$RepositoryUrl" "dnsLabel=$DnsLabel" "vmSize=Standard_B1s" `
+  --query "properties.outputs.websiteUrl.value" --output tsv
+if ($LASTEXITCODE -ne 0) { throw "O deploy ARM falhou; consulte a mensagem do Azure." }
+$VmPassword = $null
+$SecurePassword = $null
+Write-Host "URL do jogo: $WebsiteUrl"
+```
+
+#### Linux — Bash
 
 ```bash
-curl -fsS https://hellfire-azure-doom-felipinhobgtom.mexicocentral.cloudapp.azure.com/api/health
-curl -fsS https://hellfire-azure-doom-felipinhobgtom.mexicocentral.cloudapp.azure.com/api/scores
-curl -fsS -X POST https://hellfire-azure-doom-felipinhobgtom.mexicocentral.cloudapp.azure.com/api/scores \
-  -H 'Content-Type: application/json' \
-  -d '{"player":"marine","kills":7}'
+set -euo pipefail
+RESOURCE_GROUP="rg-hellfire-demo"
+LOCATION="brazilsouth"
+DNS_LABEL="hellfire-doom-$RANDOM-$RANDOM"
+TEMPLATE_URI="https://raw.githubusercontent.com/felipinhobgtom/hellfire-azure-doom/main/infra/main.json"
+REPOSITORY_URL="https://github.com/felipinhobgtom/hellfire-azure-doom.git"
+
+az group create --name "$RESOURCE_GROUP" --location "$LOCATION" --output table
+
+read -r -s -p "Senha forte para azureuser: " VM_PASSWORD
+printf '\n'
+WEBSITE_URL="$(az deployment group create \
+  --resource-group "$RESOURCE_GROUP" \
+  --name "hellfire-$(date +%Y%m%d%H%M%S)" \
+  --template-uri "$TEMPLATE_URI" \
+  --parameters "adminPassword=$VM_PASSWORD" "repositoryUrl=$REPOSITORY_URL" "dnsLabel=$DNS_LABEL" "vmSize=Standard_B1s" \
+  --query 'properties.outputs.websiteUrl.value' --output tsv)"
+unset VM_PASSWORD
+printf 'URL do jogo: %s\n' "$WEBSITE_URL"
 ```
 
-Para obter o IP depois: `az vm list-ip-addresses -g "${AZURE_RESOURCE_GROUP:-rg-hellfire-demo}" -n hellfire-vm -o table`. Diagnóstico: `az vm boot-diagnostics get-boot-log -g "${AZURE_RESOURCE_GROUP:-rg-hellfire-demo}" -n hellfire-vm`; use console serial para inspeção. Remoção completa: `az group delete -n "${AZURE_RESOURCE_GROUP:-rg-hellfire-demo}" --yes --no-wait`. Para encerrar a demonstração publicada: `az group delete -n rg-hellfire-mexico --yes --no-wait`.
+Os comandos usam `brazilsouth` como exemplo. Se sua assinatura não tiver cota/capacidade nessa região, liste as localidades permitidas com `az account list-locations --output table` e escolha outra. Se `Standard_B1s` não estiver disponível, tente `Standard_B2s` alterando `vmSize` no comando. Se o rótulo DNS já estiver ocupado, gere outro `DnsLabel`/`DNS_LABEL`. Ambos os parâmetros são definidos no template.
+
+O ARM retorna `websiteUrl`, `dnsFqdn`, `publicIp`, `storageAccount` e `vmSize`. O exemplo seleciona `websiteUrl` e o imprime no final. Esse é o link HTTPS a abrir; não presuma o hostname de outra implantação.
+
+### 6.4 Aguardar o bootstrap e validar
+
+O deployment ARM cria os recursos, mas o cloud-init da VM continua em seguida: instala Docker/Git, clona o repositório, constrói/ativa os containers e configura Caddy. Aguarde alguns minutos; a primeira solicitação TLS depende da propagação DNS e da porta 80 pública.
+
+Linux:
+
+```bash
+curl --fail --show-error "$WEBSITE_URL/api/health"
+curl --fail --show-error --output /dev/null "$WEBSITE_URL/doom/chocolate-doom.wasm"
+```
+
+Windows PowerShell:
+
+```powershell
+Invoke-RestMethod "$WebsiteUrl/api/health"
+Invoke-WebRequest "$WebsiteUrl/doom/chocolate-doom.wasm" -Method Head
+Start-Process $WebsiteUrl
+```
+
+O health check deve responder `status: ok`; o WASM deve responder HTTP 200. Caddy emite e renova certificado TLS automaticamente, e HTTP redireciona para HTTPS. A captura da tela do jogo está na seção Evidências e no README.
+
+### 6.5 Recursos provisionados
+
+| Componente | Configuração | Função |
+|---|---|---|
+| VM | Ubuntu Server 22.04 Gen2, `Standard_B1s`, disco Standard SSD 30 GB | Hospeda Docker, Flask/Gunicorn/SQLite e Caddy |
+| Rede pública | IPv4 Standard estático, DNS Azure, VNet/subnet/NIC | Publica o hostname do site |
+| NSG | TCP/80 e TCP/443 de Internet; sem TCP/22 | Desafio/redirecionamento HTTP e HTTPS; SSH permanece fechado |
+| Storage Account | `Standard_LRS`, TLS 1.2, Blob privado | Boot diagnostics da VM, não banco da aplicação |
+| Persistência | SQLite em `/opt/hellfire/data` no disco VM | Banco local da API; não é backup/alta disponibilidade |
+
+### 6.6 Diagnóstico sem abrir SSH
+
+Se o site não responder após alguns minutos, verifique DNS, capacidade do SKU e regras TCP/80/443. O log cloud-init pode ser obtido com Run Command:
+
+```text
+az vm run-command invoke --resource-group rg-hellfire-demo --name hellfire-vm --command-id RunShellScript --scripts "tail -n 100 /var/log/cloud-init-output.log" --query "value[0].message" --output tsv
+```
+
+Use o mesmo comando no PowerShell e Bash. Também é possível consultar o boot diagnostics no Azure Portal. O Resource Group deve continuar contendo a VM e os recursos até o diagnóstico terminar.
+
+### 6.7 Remover a implantação
+
+Execute somente após guardar o que precisar. O comando exclui permanentemente **todos** os recursos dentro do grupo:
+
+```text
+az group delete --name rg-hellfire-demo --yes --no-wait
+```
+
+Substitua o nome se escolheu outro grupo. `rg-hellfire-demo` é o exemplo desta documentação; `rg-hellfire-mexico` é a infraestrutura da demonstração pública e não deve ser removida para limpar sua cópia.
 
 ### CI/CD GitHub Actions
 
@@ -166,9 +267,10 @@ docs/relatorio.pdf        exportação para entrega
 
 ## 9. Evidências
 
-1. [Captura da página em jogo](evidence-homepage.png), feita no Chromium com Freedoom Phase 1 em execução, sem página de apresentação.
-2. A URL HTTPS apresentou certificado válido no Chromium/curl; a rota `/api/health` respondeu `200 {"database":"sqlite","status":"ok"}`. HTTP redireciona para HTTPS (`308`); JS, WASM e pacote de dados foram servidos pelo domínio.
-3. A API respondeu `POST /api/scores` com `201` e `GET /api/scores` com o registro persistido. O deploy foi feito por ARM/Azure CLI; URL pública, SKU, região e recursos estão no README.
+1. Captura real do jogo após o deploy:
+![Freedoom Phase 1 rodando diretamente no navegador.](evidence-homepage.png)
+2. A URL HTTPS apresentou certificado válido no Chromium/curl; `/api/health` respondeu `200 {"database":"sqlite","status":"ok"}`. HTTP redireciona para HTTPS (`308`); JS, WASM e pacote de dados foram servidos pelo domínio.
+3. A API respondeu `POST /api/scores` com `201` e `GET /api/scores` com o registro persistido. O deploy foi feito por ARM/Azure CLI; URL, SKU, região e recursos estão no README.
 4. Para capturas do Portal Azure (Resource Group, VM, NSG, VNet e Storage), use sua sessão autenticada. Não inclua segredos em capturas.
 
 ## 10. Referências
