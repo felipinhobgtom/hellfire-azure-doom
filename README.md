@@ -47,7 +47,7 @@ Consulte o guia completo, diagrama, esquema relacional e comandos no [`docs/rela
 
 `.github/workflows/cicd.yml` executa testes da API, valida JavaScript/shell/ARM e constrói a imagem em cada push e pull request. Pushes para `main` também fazem deploy: o workflow autentica no Azure por OIDC, chama `az vm run-command` para atualizar o código e reconstruir o container, preserva o SQLite e testa a URL HTTPS. Não há client secret no GitHub.
 
-Para outra instalação, configure as variáveis do repositório `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP`, `AZURE_VM_NAME` e `AZURE_SITE_URL`. A aplicação Entra precisa de uma credencial federada com subject `repo:OWNER/REPO:ref:refs/heads/main` e da função `Virtual Machine Contributor` no escopo da VM. O script executado remotamente está em `scripts/deploy_vm.sh`.
+Para outra instalação, configure as variáveis do repositório `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP`, `AZURE_VM_NAME` e `AZURE_SITE_URL`. A aplicação Entra precisa de uma credencial federada com subject no formato `repo:OWNER@OWNER_ID/REPO@REPO_ID:ref:refs/heads/main` (use os claims exatos emitidos pelo GitHub) e da função `Virtual Machine Contributor` no escopo da VM. O script executado remotamente está em `scripts/deploy_vm.sh`.
 
 ## Tecnologias
 
