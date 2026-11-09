@@ -1,0 +1,4 @@
+{$HELLFIRE_HOST} {
+	encode zstd gzip
+	reverse_proxy hellfire:8000
+}

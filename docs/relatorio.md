@@ -13,12 +13,13 @@ O motor vem do submódulo upstream `midzer/chocolate-doom` (GPL-2.0) e os dados 
 
 ```mermaid
 flowchart LR
-    B[Browser: Chocolate Doom WASM + HTML] -->|HTTP :80| P[IPv4 público]
-    P --> N[NSG: inbound TCP 80]
-    N --> V[VM Ubuntu 22.04 · Standard_B1s]
+    B[Browser: Chocolate Doom WASM + HTML] -->|HTTPS :443| P[IPv4 público + DNS Azure]
+    P --> N[NSG: TCP 80/443]
+    N --> C[Caddy · certificado TLS automático]
+    C --> V[VM Ubuntu 22.04 · Standard_B1s]
     V --> D[Docker · Gunicorn + Flask]
     D -->|GET/POST /api/scores| S[(SQLite · /data/doom.db)]
-    V -. inicialização .-> C[cloud-init: Docker, clone Git, build, run]
+    V -. inicialização .-> I[cloud-init: Docker, clone Git, app e Caddy]
     V -->|boot diagnostics| A[(Storage Account · Blob privado)]
     T[Azure CLI + ARM] -->|resource group deployment| V
 ```
@@ -73,15 +74,16 @@ SQLite cria a tabela na primeira requisição. `PRAGMA journal_mode=WAL` melhora
 | Máquina virtual | Ubuntu Server 22.04 Gen2, `Standard_B1s` (1 vCPU, 1 GiB RAM) | Host didático de baixo porte; suficiente para pouco tráfego e container leve, sem alta disponibilidade. Escolha `Standard_B2s` no parâmetro ARM se precisar de mais memória. SKU e preço variam por região/subscrição. |
 | Disco OS | Standard SSD LRS, 30 GiB | Linux e persistência local `/opt/hellfire/data`; recurso gerenciado pelo Azure. SQLite num disco de instância única não escala horizontalmente. |
 | Rede | VNet `10.10.0.0/16`, subnet `10.10.1.0/24`, NIC, IPv4 Standard estático e FQDN `hellfire-azure-doom-felipinhobgtom.mexicocentral.cloudapp.azure.com` | DNS público gerenciado pelo Azure e associado ao IP da demo; rótulo deve ser único na região. |
-| NSG | entrada TCP/80 de Internet; SSH/22 não autorizado | Menor superfície necessária para a demonstração. Administração via console serial/portal ou alteração controlada do NSG. |
+| NSG | Entrada TCP/80 e TCP/443 de Internet; SSH/22 não autorizado | HTTP serve o desafio ACME e redireciona para HTTPS; Caddy atende TLS em 443. |
+| Proxy HTTPS | Caddy em container Docker, com `/data` e `/config` persistidos | Emite e renova certificado TLS automaticamente via ACME/Let's Encrypt; faz reverse proxy para Flask na rede Docker. |
 | Storage Account | `StorageV2`, `Standard_LRS`, HTTPS obrigatório, TLS 1.2, acesso público a Blob desativado | Endpoint Blob associado a **boot diagnostics** da VM. Não é o datastore da aplicação nem backup do SQLite. |
-| Cloud-init | apt instala Docker, clona Git, constrói imagem e executa container | Bootstrap reproduzível; log em `/var/log/cloud-init-output.log`. |
+| Cloud-init | apt instala Docker, clona Git, constrói imagem e executa app/Caddy | Bootstrap reproduzível; log em `/var/log/cloud-init-output.log`. |
 
 `Standard_B1s` é SKU burstable de entrada e sujeito a disponibilidade/cota. O custo final depende da região, estado da VM, disco e preços da assinatura; uma VM ligada continua gerando custo. Remova o resource group após a aula. Esta configuração não promete nível gratuito.
 
 ## 5. Segurança e limites conhecidos
 
-- HTTP sem TLS, login/autorização e limitação de requisições; apenas para demo acadêmica. Não enviar dados pessoais ou segredos.
+- HTTPS com certificado público automático via Caddy; HTTP redireciona para HTTPS. A demo ainda não tem login/autorização nem limitação de requisições; não enviar dados pessoais ou segredos.
 - A UI sanitiza o nome ao renderizar; o servidor restringe nome/tipo/faixa e usa SQL parametrizado. O endpoint aceita qualquer pessoa, portanto pontuações não são autenticadas e podem ser forjadas.
 - Senha da VM fornecida ao ARM como `secureString`, nunca gravada no template de parâmetros nem no git. SSH não é liberado no NSG.
 - Container executa como UID não-root; DB é montado num diretório persistente da VM. A disponibilidade e backup dependem dessa VM. A Storage Account não contém os dados da aplicação.
@@ -111,12 +113,12 @@ export AZURE_DNS_LABEL='hellfire-azure-doom-felipinhobgtom' # opcional; o ARM us
 ./deploy.sh
 ```
 
-O script cria o grupo e chama `az deployment group create` com `infra/main.json` e `infra/parameters.json`. A saída apresenta `websiteUrl` (HTTP pelo hostname), `dnsFqdn`, `publicIp`, `storageAccount` e `vmSize`. A criação da VM inicia cloud-init; aguarde alguns minutos antes de testar:
+O script cria o grupo e chama `az deployment group create` com `infra/main.json` e `infra/parameters.json`. A saída apresenta `websiteUrl` (HTTPS), `dnsFqdn`, `publicIp`, `storageAccount` e `vmSize`. A VM inicia cloud-init, que sobe o proxy Caddy e solicita o certificado público; aguarde alguns minutos e então teste:
 
 ```bash
-curl -fsS http://hellfire-azure-doom-felipinhobgtom.mexicocentral.cloudapp.azure.com/api/health
-curl -fsS http://hellfire-azure-doom-felipinhobgtom.mexicocentral.cloudapp.azure.com/api/scores
-curl -fsS -X POST http://hellfire-azure-doom-felipinhobgtom.mexicocentral.cloudapp.azure.com/api/scores \
+curl -fsS https://hellfire-azure-doom-felipinhobgtom.mexicocentral.cloudapp.azure.com/api/health
+curl -fsS https://hellfire-azure-doom-felipinhobgtom.mexicocentral.cloudapp.azure.com/api/scores
+curl -fsS -X POST https://hellfire-azure-doom-felipinhobgtom.mexicocentral.cloudapp.azure.com/api/scores \
   -H 'Content-Type: application/json' \
   -d '{"player":"marine","kills":7}'
 ```
@@ -138,12 +140,13 @@ A API usa SQLite embutido no Python. Em produção, Gunicorn executa um worker c
 
 ```text
 app.py                 API Flask + SQLite
-web/index.html         página/arena WebAssembly
-web/game.js            placar consumido pela página
-web/doom/               artefatos JS/WASM/data do Chocolate Doom
+web/index.html         jogo WebAssembly em tela cheia
+web/game.js            inicialização direta de Chocolate Doom
+web/doom/              artefatos JS/WASM/data do Chocolate Doom
 web/assets/             IWAD Freedoom + licença
 vendor/chocolate-doom/  submódulo upstream GPL-2.0
 Dockerfile             imagem de produção
+Caddyfile              proxy HTTPS e reverse proxy
 flake.nix              ambiente Nix reproduzível
 deploy.sh              orquestração Azure CLI
 infra/main.json        recursos ARM
@@ -154,7 +157,7 @@ docs/relatorio.pdf     exportação para entrega
 
 ## 9. Evidências
 
-1. [Captura da página em jogo](evidence-homepage.png), tirada no Chromium depois de carregar o motor e o IWAD Freedoom. A imagem mostra o mapa Freedoom Phase 1 em execução, além do ranking retornado pela API.
+1. [Captura da página em jogo](evidence-homepage.png), feita no Chromium com Freedoom Phase 1 em execução, sem página de apresentação.
 2. A implantação pública respondeu `GET /api/health` com `200 {"database":"sqlite","status":"ok"}`, `POST /api/scores` com `201` e `GET /api/scores` com o registro persistido.
 3. O deploy foi feito por ARM/Azure CLI; URL pública, SKU, região e nomes dos recursos estão no README. A validação da rede/VM e o cloud-init foram conferidos via Azure CLI.
 4. Para capturas do Portal Azure (Resource Group, VM, NSG, VNet e Storage), use sua sessão autenticada. Não inclua segredos em capturas.
