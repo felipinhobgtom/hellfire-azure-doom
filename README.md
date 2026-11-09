@@ -31,16 +31,16 @@ docker run --rm -p 8000:8000 -v "$PWD/data:/data" hellfire
 
 ## Deploy Azure
 
-Pré-requisitos: assinatura Azure habilitada, `nix` instalado, `gh` autenticado e permissões para criar grupo, VM, rede e Storage Account.
+Pré-requisitos: assinatura Azure habilitada, Azure CLI instalado em qualquer máquina (Nix é opcional) e permissões para criar grupo, VM, rede e Storage Account.
 
 1. Publique este repositório como **público**: a VM faz `git clone` durante o cloud-init.
-2. `nix develop` e autentique com `az login` (se necessário).
+2. Autentique com `az login` (se necessário).
 3. Defina uma senha forte apenas para o perfil administrativo da VM: `export AZURE_VM_PASSWORD='...'`.
-4. Execute `./deploy.sh` (região padrão `brazilsouth`; troque com `AZURE_LOCATION`).
+4. Execute `./deploy.sh` (região padrão `brazilsouth`; troque com `AZURE_LOCATION`). Configure `AZURE_VM_SIZE=Standard_B2s` se a SKU pequena não tiver capacidade na região/assinatura.
 5. Aguarde o cloud-init construir o container; abra a URL HTTP da saída e `/api/health`.
 6. Ao terminar a demonstração, rode `az group delete --name rg-hellfire-demo --yes --no-wait` para remover os recursos e evitar cobranças.
 
-O ARM cria VM Ubuntu 22.04 `Standard_B1s`, disco SSD gerenciado Standard 30 GB, IP público IPv4, VNet/subnet, NSG liberando somente HTTP/80 e Storage Account privada Standard_LRS para boot diagnostics. A aplicação/gravações SQLite ficam no disco persistente da VM, **não** no blob. O endpoint é HTTP sem TLS e serve para demonstração; não exponha dados sensíveis. SSH é fechado pela NSG.
+O ARM cria VM Ubuntu 22.04 `Standard_B1s` por padrão (selecionável como `Standard_B2s`), disco SSD gerenciado Standard 30 GB, IP público IPv4, VNet/subnet, NSG liberando somente HTTP/80 e Storage Account privada Standard_LRS para boot diagnostics. A aplicação/gravações SQLite ficam no disco persistente da VM, **não** no blob. O endpoint é HTTP sem TLS e serve para demonstração; não exponha dados sensíveis. SSH é fechado pela NSG.
 
 Consulte o guia completo, diagrama, esquema relacional e comandos no [`docs/relatorio.md`](docs/relatorio.md). Uma cópia PDF está em [`docs/relatorio.pdf`](docs/relatorio.pdf).
 
