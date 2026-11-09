@@ -6,7 +6,8 @@
     "adminUsername": { "type": "string", "defaultValue": "azureuser" },
     "adminPassword": { "type": "secureString" },
     "vmSize": { "type": "string", "defaultValue": "Standard_B1s", "allowedValues": ["Standard_B1s", "Standard_B2s"] },
-    "repositoryUrl": { "type": "string" }
+    "repositoryUrl": { "type": "string" },
+    "dnsLabel": { "type": "string", "defaultValue": "hellfire-azure-doom-felipinhobgtom" }
   },
   "variables": {
     "location": "[resourceGroup().location]",
@@ -28,7 +29,7 @@
       "type": "Microsoft.Network/virtualNetworks", "apiVersion": "2023-11-01", "name": "[variables('vnetName')]", "location": "[variables('location')]", "dependsOn": ["[resourceId('Microsoft.Network/networkSecurityGroups', variables('nsgName'))]"], "properties": { "addressSpace": { "addressPrefixes": ["10.10.0.0/16"] }, "subnets": [{ "name": "[variables('subnetName')]", "properties": { "addressPrefix": "10.10.1.0/24", "networkSecurityGroup": { "id": "[resourceId('Microsoft.Network/networkSecurityGroups', variables('nsgName'))]" } } }] }
     },
     {
-      "type": "Microsoft.Network/publicIPAddresses", "apiVersion": "2023-11-01", "name": "[variables('publicIpName')]", "location": "[variables('location')]", "sku": { "name": "Standard" }, "properties": { "publicIPAllocationMethod": "Static", "publicIPAddressVersion": "IPv4" }
+      "type": "Microsoft.Network/publicIPAddresses", "apiVersion": "2023-11-01", "name": "[variables('publicIpName')]", "location": "[variables('location')]", "sku": { "name": "Standard" }, "properties": { "publicIPAllocationMethod": "Static", "publicIPAddressVersion": "IPv4", "dnsSettings": { "domainNameLabel": "[parameters('dnsLabel')]" } }
     },
     {
       "type": "Microsoft.Network/networkInterfaces", "apiVersion": "2023-11-01", "name": "[variables('nicName')]", "location": "[variables('location')]", "dependsOn": ["[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]", "[resourceId('Microsoft.Network/publicIPAddresses', variables('publicIpName'))]"], "properties": { "ipConfigurations": [{ "name": "ipconfig1", "properties": { "privateIPAllocationMethod": "Dynamic", "subnet": { "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', variables('vnetName'), variables('subnetName'))]" }, "publicIPAddress": { "id": "[resourceId('Microsoft.Network/publicIPAddresses', variables('publicIpName'))]" } } }] }
@@ -44,7 +45,8 @@
     }
   ],
   "outputs": {
-    "websiteUrl": { "type": "string", "value": "[concat('http://', reference(resourceId('Microsoft.Network/publicIPAddresses', variables('publicIpName')), '2023-11-01').ipAddress)]" },
+    "websiteUrl": { "type": "string", "value": "[concat('http://', reference(resourceId('Microsoft.Network/publicIPAddresses', variables('publicIpName')), '2023-11-01').dnsSettings.fqdn)]" },
+    "dnsFqdn": { "type": "string", "value": "[reference(resourceId('Microsoft.Network/publicIPAddresses', variables('publicIpName')), '2023-11-01').dnsSettings.fqdn]" },
     "publicIp": { "type": "string", "value": "[reference(resourceId('Microsoft.Network/publicIPAddresses', variables('publicIpName')), '2023-11-01').ipAddress]" },
     "storageAccount": { "type": "string", "value": "[variables('storageName')]" },
     "vmSize": { "type": "string", "value": "[parameters('vmSize')]" }

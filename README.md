@@ -33,15 +33,15 @@ docker run --rm -p 8000:8000 -v "$PWD/data:/data" hellfire
 
 ## Deploy Azure
 
-Pré-requisitos: Azure CLI instalado em qualquer máquina (Nix é opcional) e permissões para criar grupo, VM, rede e Storage Account. O repositório já está publicado e a instância de demonstração está disponível em **[http://172.195.105.201](http://172.195.105.201)** (`Standard_B1s`, `mexicocentral`).
+Pré-requisitos: Azure CLI instalado em qualquer máquina (Nix é opcional) e permissões para criar grupo, VM, rede e Storage Account. A demo está em **[http://hellfire-azure-doom-felipinhobgtom.mexicocentral.cloudapp.azure.com](http://hellfire-azure-doom-felipinhobgtom.mexicocentral.cloudapp.azure.com)** (`Standard_B1s`, `mexicocentral`).
 
 1. Autentique com `az login` (se necessário).
 2. Defina uma senha forte para a VM: `export AZURE_VM_PASSWORD='...'`.
-3. Execute `./deploy.sh` (região padrão `brazilsouth`; selecione com `AZURE_LOCATION`, SKU com `AZURE_VM_SIZE`). A assinatura estudantil atual permite `brazilsouth`, `mexicocentral`, `chilecentral`, `spaincentral` e `southcentralus`; valide as regiões/cotas da sua própria assinatura.
+3. Execute `./deploy.sh` (região padrão `brazilsouth`; selecione com `AZURE_LOCATION`, SKU com `AZURE_VM_SIZE`). O ARM configura o DNS público Azure; `AZURE_DNS_LABEL` permite escolher outro rótulo se o padrão já estiver ocupado na região. A assinatura estudantil atual permite `brazilsouth`, `mexicocentral`, `chilecentral`, `spaincentral` e `southcentralus`; valide as regiões/cotas da sua própria assinatura.
 4. Aguarde cloud-init construir o container; teste `/api/health`.
 5. Ao terminar a demonstração, rode `az group delete --name rg-hellfire-mexico --yes --no-wait` para remover os recursos e evitar cobranças.
 
-O ARM cria VM Ubuntu 22.04 `Standard_B1s` por padrão (selecionável como `Standard_B2s`), disco SSD gerenciado Standard 30 GB, IP público IPv4, VNet/subnet, NSG liberando somente HTTP/80 e Storage Account privada Standard_LRS para boot diagnostics. A aplicação/gravações SQLite ficam no disco persistente da VM, **não** no blob. O endpoint é HTTP sem TLS e serve para demonstração; não exponha dados sensíveis. SSH é fechado pela NSG.
+O ARM cria VM Ubuntu 22.04 `Standard_B1s` por padrão (selecionável como `Standard_B2s`), disco SSD gerenciado Standard 30 GB, IP público IPv4 com hostname Azure `*.cloudapp.azure.com`, VNet/subnet, NSG liberando somente HTTP/80 e Storage Account privada Standard_LRS para boot diagnostics. A aplicação/gravações SQLite ficam no disco persistente da VM, **não** no blob. O endpoint é HTTP sem TLS e serve para demonstração; não exponha dados sensíveis. SSH é fechado pela NSG.
 
 Consulte o guia completo, diagrama, esquema relacional e comandos no [`docs/relatorio.md`](docs/relatorio.md). Uma cópia PDF está em [`docs/relatorio.pdf`](docs/relatorio.pdf).
 

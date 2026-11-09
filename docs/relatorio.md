@@ -72,7 +72,7 @@ SQLite cria a tabela na primeira requisição. `PRAGMA journal_mode=WAL` melhora
 | Resource Group | `rg-hellfire-mexico`, localização `mexicocentral` | Grupo usado na implantação pública desta demonstração; `AZURE_RESOURCE_GROUP` e `AZURE_LOCATION` são configuráveis no script. |
 | Máquina virtual | Ubuntu Server 22.04 Gen2, `Standard_B1s` (1 vCPU, 1 GiB RAM) | Host didático de baixo porte; suficiente para pouco tráfego e container leve, sem alta disponibilidade. Escolha `Standard_B2s` no parâmetro ARM se precisar de mais memória. SKU e preço variam por região/subscrição. |
 | Disco OS | Standard SSD LRS, 30 GiB | Linux e persistência local `/opt/hellfire/data`; recurso gerenciado pelo Azure. SQLite num disco de instância única não escala horizontalmente. |
-| Rede | VNet `10.10.0.0/16`, subnet `10.10.1.0/24`, NIC e IPv4 Standard estático | IP usado na URL resultante da implantação. |
+| Rede | VNet `10.10.0.0/16`, subnet `10.10.1.0/24`, NIC, IPv4 Standard estático e FQDN `hellfire-azure-doom-felipinhobgtom.mexicocentral.cloudapp.azure.com` | DNS público gerenciado pelo Azure e associado ao IP da demo; rótulo deve ser único na região. |
 | NSG | entrada TCP/80 de Internet; SSH/22 não autorizado | Menor superfície necessária para a demonstração. Administração via console serial/portal ou alteração controlada do NSG. |
 | Storage Account | `StorageV2`, `Standard_LRS`, HTTPS obrigatório, TLS 1.2, acesso público a Blob desativado | Endpoint Blob associado a **boot diagnostics** da VM. Não é o datastore da aplicação nem backup do SQLite. |
 | Cloud-init | apt instala Docker, clona Git, constrói imagem e executa container | Bootstrap reproduzível; log em `/var/log/cloud-init-output.log`. |
@@ -95,7 +95,7 @@ SQLite cria a tabela na primeira requisição. `PRAGMA journal_mode=WAL` melhora
 
 Pré-requisitos para implantação: Azure CLI instalado em qualquer máquina (Linux, macOS, Windows/WSL ou Azure Cloud Shell), sessão/autorização Azure com permissões para criar VM, rede, IP e Storage, e cota disponível para SKU B-series. O código precisa estar em repositório GitHub **público** porque cloud-init clona a URL no bootstrap. GitHub CLI é usado apenas para publicar o repositório, não para implantar. Nix é opcional.
 
-Esta assinatura de estudante permite somente `brazilsouth`, `mexicocentral`, `chilecentral`, `spaincentral` e `southcentralus`; verifique a política/cota da sua assinatura. Na tentativa de deploy, `Standard_B1s` e `Standard_B2s` estavam sem capacidade em Brazil South. O deploy público foi feito em `mexicocentral`, `Standard_B1s`. Para outra conta, configure `AZURE_LOCATION` e `AZURE_VM_SIZE`; a disponibilidade de capacidade muda.
+Esta assinatura de estudante permite somente `brazilsouth`, `mexicocentral`, `chilecentral`, `spaincentral` e `southcentralus`; verifique a política/cota da sua assinatura. Na tentativa de deploy, `Standard_B1s` e `Standard_B2s` estavam sem capacidade em Brazil South. O deploy público foi feito em `mexicocentral`, `Standard_B1s`, com o hostname `hellfire-azure-doom-felipinhobgtom.mexicocentral.cloudapp.azure.com`. Para outra conta, configure `AZURE_LOCATION`, `AZURE_VM_SIZE` e, se o rótulo estiver ocupado na região, `AZURE_DNS_LABEL`; a disponibilidade de capacidade muda.
 
 ### Publicar e deploy
 
@@ -107,15 +107,16 @@ gh repo create hellfire-azure-doom --public --source=. --remote=origin --push
 az login
 az account show
 export AZURE_VM_PASSWORD='Senha-forte-que-atenda-a-politica'
+export AZURE_DNS_LABEL='hellfire-azure-doom-felipinhobgtom' # opcional; o ARM usa este rótulo DNS
 ./deploy.sh
 ```
 
-O script cria o grupo e chama `az deployment group create` com `infra/main.json` e `infra/parameters.json`. A saída apresenta `websiteUrl`, `publicIp`, `storageAccount` e `vmSize`. A criação da VM inicia cloud-init; aguarde alguns minutos antes de testar:
+O script cria o grupo e chama `az deployment group create` com `infra/main.json` e `infra/parameters.json`. A saída apresenta `websiteUrl` (HTTP pelo hostname), `dnsFqdn`, `publicIp`, `storageAccount` e `vmSize`. A criação da VM inicia cloud-init; aguarde alguns minutos antes de testar:
 
 ```bash
-curl -fsS http://IP_PUBLICO/api/health
-curl -fsS http://IP_PUBLICO/api/scores
-curl -fsS -X POST http://IP_PUBLICO/api/scores \
+curl -fsS http://hellfire-azure-doom-felipinhobgtom.mexicocentral.cloudapp.azure.com/api/health
+curl -fsS http://hellfire-azure-doom-felipinhobgtom.mexicocentral.cloudapp.azure.com/api/scores
+curl -fsS -X POST http://hellfire-azure-doom-felipinhobgtom.mexicocentral.cloudapp.azure.com/api/scores \
   -H 'Content-Type: application/json' \
   -d '{"player":"marine","kills":7}'
 ```
