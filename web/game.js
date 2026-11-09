@@ -1,1 +1,51 @@
-const canvas=document.querySelector('#arena'),ctx=canvas.getContext('2d'),overlay=document.querySelector('#overlay'),killsLabel=document.querySelector('#kills');let running=false,kills=0,angle=0,x=0,y=0,keys={},targets=[];const W=canvas.width,H=canvas.height;function spawn(){targets=Array.from({length:5},()=>({a:(Math.random()-.5)*1.5,d:2+Math.random()*3,alive:true}))}function draw(){ctx.fillStyle='#171c1b';ctx.fillRect(0,0,W,H/2);ctx.fillStyle='#39342e';ctx.fillRect(0,H/2,W,H/2);for(let i=0;i<8;i++){ctx.fillStyle=i%2?'#282b27':'#30302a';ctx.fillRect(i*80,120,4,240)}ctx.fillStyle='#252320';ctx.fillRect(0,270,W,90);for(const t of targets){if(!t.alive)continue;let rel=t.a-angle;if(rel>Math.PI)rel-=2*Math.PI;if(rel< -Math.PI)rel+=2*Math.PI;if(Math.abs(rel)>.8)continue;let sx=W/2+rel*W*.75,sz=75/t.d;ctx.fillStyle='#a53628';ctx.fillRect(sx-sz/3,H/2-sz/2,sz*2/3,sz);ctx.fillStyle='#e35c42';ctx.fillRect(sx-sz/4,H/2-sz/2,sz/2,sz/3);ctx.fillStyle='#171614';ctx.fillRect(sx-sz/3,H/2,sz/4,sz/2);ctx.fillRect(sx+sz/8,H/2,sz/4,sz/2)}ctx.strokeStyle='#e8e3d3';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(W/2-9,H/2);ctx.lineTo(W/2+9,H/2);ctx.moveTo(W/2,H/2-9);ctx.lineTo(W/2,H/2+9);ctx.stroke();if(running){if(keys.a)angle-=.045;if(keys.d)angle+=.045;if(keys.w){x+=Math.sin(angle)*.04;y+=Math.cos(angle)*.04}if(keys.s){x-=Math.sin(angle)*.04;y-=Math.cos(angle)*.04}}requestAnimationFrame(draw)}draw();async function refresh(){try{let r=await fetch('/api/scores');let data=await r.json();document.querySelector('#scores').innerHTML=data.length?data.map((s,i)=>`<div class="row"><span>${String(i+1).padStart(2,'0')}</span><span>${escapeHtml(s.player)}</span><strong>${s.kills}</strong></div>`).join(''):'<div class="empty">Ainda não há recordes. Seja o primeiro.</div>';document.querySelector('#status').textContent='● API ONLINE'}catch{document.querySelector('#status').textContent='● API OFFLINE'}}function escapeHtml(s){return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}document.querySelector('#start').onclick=()=>{running=true;kills=0;spawn();overlay.hidden=true;canvas.requestPointerLock?.()};document.addEventListener('keydown',e=>{keys[e.key.toLowerCase()]=true;if(e.key==='Escape'&&running){running=false;overlay.hidden=false;overlay.querySelector('h2').textContent='MISSÃO PAUSADA';overlay.querySelector('#start').textContent='RETOMAR MISSÃO'}});document.addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);document.addEventListener('mousemove',e=>{if(document.pointerLockElement===canvas)angle+=e.movementX*.003});canvas.addEventListener('click',()=>{if(!running)return;const t=targets.find(t=>t.alive&&Math.abs(t.a-angle)<.1);if(t){t.alive=false;kills++;killsLabel.textContent=`ELIMS ${String(kills).padStart(3,'0')}`;if(targets.every(t=>!t.alive))spawn()}});document.addEventListener('pointerlockchange',()=>{if(!document.pointerLockElement&&running){running=false;overlay.hidden=false}});window.addEventListener('keydown',e=>{if(['w','a','s','d',' '].includes(e.key.toLowerCase()))e.preventDefault()});refresh();setInterval(refresh,15000);
+function escapeHtml(value) {
+  return value.replace(/[&<>"']/g, char => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  })[char]);
+}
+
+async function refreshScores() {
+  try {
+    const response = await fetch('/api/scores');
+    const scores = await response.json();
+    document.querySelector('#scores').innerHTML = scores.length
+      ? scores.map((score, index) => `<div class="row"><span>${String(index + 1).padStart(2, '0')}</span><span>${escapeHtml(score.player)}</span><strong>${score.kills}</strong></div>`).join('')
+      : '<div class="empty">Ainda não há recordes. Seja o primeiro.</div>';
+    document.querySelector('#status').textContent = '● API ONLINE';
+  } catch {
+    document.querySelector('#status').textContent = '● API OFFLINE';
+  }
+}
+
+window.Module = {
+  canvas: document.querySelector('#canvas'),
+  noInitialRun: true,
+  arguments: ['-warp', '1', '-skill', '3', '-iwad', '/freedoom1.wad', '-window', '-nogui', '-nomusic',
+    '-config', '/doombrowser.cfg', '-nograbmouse'],
+  locateFile: path => `/doom/${path}`,
+  print: text => console.log(text),
+  printErr(text) {
+    console.error(text);
+    if (!document.querySelector('#loading').hidden) document.querySelector('#loading p').textContent = text;
+  },
+  onRuntimeInitialized() {
+    try {
+      callMain(window.Module.arguments);
+      document.querySelector('#loading').hidden = true;
+      document.querySelector('#wasm-status').textContent = '● CHOCOLATE DOOM WASM';
+    } catch (error) {
+      document.querySelector('#loading p').textContent = `Falha ao iniciar o jogo: ${error}`;
+    }
+  },
+  onAbort(reason) {
+    document.querySelector('#loading').hidden = false;
+    document.querySelector('#loading h2').textContent = 'FALHA AO INICIAR';
+    document.querySelector('#loading p').textContent = String(reason);
+  },
+};
+window.addEventListener('error', event => {
+  if (!document.querySelector('#loading').hidden) document.querySelector('#loading p').textContent = event.message;
+});
+
+refreshScores();
+setInterval(refreshScores, 15000);

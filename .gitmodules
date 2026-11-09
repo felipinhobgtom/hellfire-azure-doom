@@ -1,0 +1,4 @@
+[submodule "vendor/chocolate-doom"]
+	path = vendor/chocolate-doom
+	url = https://github.com/midzer/chocolate-doom.git
+	branch = master

@@ -5,15 +5,15 @@ Projeto didático · Novembro de 2026
 
 ## 1. Objetivo e escopo
 
-Disponibilizar uma página web de entrada direta para uma arena FPS retrô, registrar resultados por uma API HTTP e armazená-los em banco relacional SQLite. Toda a infraestrutura de demonstração é criada por template Azure Resource Manager (ARM) e implantada com Azure CLI. O ambiente de desenvolvimento é definido por Nix Flakes.
+Disponibilizar uma página que inicializa Chocolate Doom 3.1.0 como WebAssembly/SDL2 no navegador com o IWAD livre Freedoom Phase 1, expor uma API REST e persistir placares em SQLite. Toda a infraestrutura de demonstração é declarada por ARM e implantada com Azure CLI; Nix fornece um ambiente de desenvolvimento opcional.
 
-**Precisão do protótipo:** o pedido inicial citou o port Chocolate Doom e WebAssembly. Esta entrega usa uma arena Canvas 2D própria e não é o executável Doom, não compila Chocolate Doom para WASM e não inclui WAD/IWAD. O upstream escolhido para futura integração é https://github.com/midzer/chocolate-doom. Para reproduzir o jogo original será preciso validar/adaptar SDL2/Emscripten, criar o pacote WASM e obter legalmente os dados do jogo. A UI não finge ser o port upstream.
+O motor vem do submódulo upstream `midzer/chocolate-doom` (GPL-2.0) e os dados de jogo do release Freedoom 0.13.0 (BSD-3-Clause). Não são distribuídos IWADs comerciais de DOOM.
 
 ## 2. Arquitetura
 
 ```mermaid
 flowchart LR
-    B[Browser: HTML CSS Canvas JS] -->|HTTP :80| P[IPv4 público]
+    B[Browser: Chocolate Doom WASM + HTML] -->|HTTP :80| P[IPv4 público]
     P --> N[NSG: inbound TCP 80]
     N --> V[VM Ubuntu 22.04 · Standard_B1s]
     V --> D[Docker · Gunicorn + Flask]
@@ -41,7 +41,7 @@ sequenceDiagram
     A-->>W: 201 Created + JSON
 ```
 
-No protótipo atual a UI exibe o ranking e oferece a arena; a rota POST está disponível para integração de resultados. A persistência está ligada ao volume de dados Docker no disco gerenciado da VM.
+Chocolate Doom e Freedoom são carregados automaticamente pela página. O SDL2/Emscripten recebe teclado e mouse diretamente no canvas; o elemento mantém o ID `canvas` exigido pelo backend de vídeo SDL Emscripten. A interface mostra o ranking da API; clientes registram resultados com `POST /api/scores`.
 
 ## 3. Banco de dados e contrato HTTP
 
@@ -69,7 +69,7 @@ SQLite cria a tabela na primeira requisição. `PRAGMA journal_mode=WAL` melhora
 
 | Componente | Configuração | Papel e trade-off |
 |---|---|---|
-| Resource Group | `rg-hellfire-demo`, localização `brazilsouth` | Ciclo de vida e remoção agrupados. |
+| Resource Group | `rg-hellfire-mexico`, localização `mexicocentral` | Grupo usado na implantação pública desta demonstração; `AZURE_RESOURCE_GROUP` e `AZURE_LOCATION` são configuráveis no script. |
 | Máquina virtual | Ubuntu Server 22.04 Gen2, `Standard_B1s` (1 vCPU, 1 GiB RAM) | Host didático de baixo porte; suficiente para pouco tráfego e container leve, sem alta disponibilidade. Escolha `Standard_B2s` no parâmetro ARM se precisar de mais memória. SKU e preço variam por região/subscrição. |
 | Disco OS | Standard SSD LRS, 30 GiB | Linux e persistência local `/opt/hellfire/data`; recurso gerenciado pelo Azure. SQLite num disco de instância única não escala horizontalmente. |
 | Rede | VNet `10.10.0.0/16`, subnet `10.10.1.0/24`, NIC e IPv4 Standard estático | IP usado na URL resultante da implantação. |
@@ -95,6 +95,8 @@ SQLite cria a tabela na primeira requisição. `PRAGMA journal_mode=WAL` melhora
 
 Pré-requisitos para implantação: Azure CLI instalado em qualquer máquina (Linux, macOS, Windows/WSL ou Azure Cloud Shell), sessão/autorização Azure com permissões para criar VM, rede, IP e Storage, e cota disponível para SKU B-series. O código precisa estar em repositório GitHub **público** porque cloud-init clona a URL no bootstrap. GitHub CLI é usado apenas para publicar o repositório, não para implantar. Nix é opcional.
 
+Esta assinatura de estudante permite somente `brazilsouth`, `mexicocentral`, `chilecentral`, `spaincentral` e `southcentralus`; verifique a política/cota da sua assinatura. Na tentativa de deploy, `Standard_B1s` e `Standard_B2s` estavam sem capacidade em Brazil South. O deploy público foi feito em `mexicocentral`, `Standard_B1s`. Para outra conta, configure `AZURE_LOCATION` e `AZURE_VM_SIZE`; a disponibilidade de capacidade muda.
+
 ### Publicar e deploy
 
 ```bash
@@ -118,23 +120,28 @@ curl -fsS -X POST http://IP_PUBLICO/api/scores \
   -d '{"player":"marine","kills":7}'
 ```
 
-Para obter o IP depois: `az vm list-ip-addresses -g rg-hellfire-demo -n hellfire-vm -o table`. Diagnóstico: `az vm boot-diagnostics get-boot-log -g rg-hellfire-demo -n hellfire-vm`; use console serial para inspeção. Remoção completa: `az group delete -n rg-hellfire-demo --yes --no-wait`.
+Para obter o IP depois: `az vm list-ip-addresses -g "${AZURE_RESOURCE_GROUP:-rg-hellfire-demo}" -n hellfire-vm -o table`. Diagnóstico: `az vm boot-diagnostics get-boot-log -g "${AZURE_RESOURCE_GROUP:-rg-hellfire-demo}" -n hellfire-vm`; use console serial para inspeção. Remoção completa: `az group delete -n "${AZURE_RESOURCE_GROUP:-rg-hellfire-demo}" --yes --no-wait`. Para encerrar a demonstração publicada: `az group delete -n rg-hellfire-mexico --yes --no-wait`.
 
 ## 7. Desenvolvimento/testes
 
 ```bash
-nix develop
-python app.py
+nix develop                 # opcional: Python, Azure CLI, Emscripten e CMake
+./scripts/build_wasm.sh    # recompila upstream + IWAD, requer submódulo clonado
+python app.py              # http://localhost:8000
+python -m unittest discover -s tests -v
 ```
 
-A API não precisa de dependência de banco externa: SQLite vem com Python. O servidor de produção é Gunicorn com um worker e quatro threads. Imagem Docker deriva de `python:3.12-slim`; o caminho `/data` é montado para persistir fora do container.
+A API usa SQLite embutido no Python. Em produção, Gunicorn executa um worker com quatro threads; Docker deriva de `python:3.12-slim`, e o caminho `/data` é montado para persistir o DB fora do container. O executável WASM e o pacote Freedoom já vêm no repositório, portanto rebuild local não é pré-requisito para executar ou implantar.
 
 ## 8. Organização do repositório
 
 ```text
 app.py                 API Flask + SQLite
-web/index.html         página responsiva
-web/game.js            arena Canvas e placar
+web/index.html         página/arena WebAssembly
+web/game.js            placar consumido pela página
+web/doom/               artefatos JS/WASM/data do Chocolate Doom
+web/assets/             IWAD Freedoom + licença
+vendor/chocolate-doom/  submódulo upstream GPL-2.0
 Dockerfile             imagem de produção
 flake.nix              ambiente Nix reproduzível
 deploy.sh              orquestração Azure CLI
@@ -144,14 +151,12 @@ docs/relatorio.md      documentação completa
 docs/relatorio.pdf     exportação para entrega
 ```
 
-## 9. Evidências a anexar na apresentação
+## 9. Evidências
 
-1. Página inicial aberta, arena visível e placar carregado.
-2. Requisições `/api/health`, `GET /api/scores` e `POST /api/scores` com retorno HTTP.
-3. Resource Group no Portal mostrando VM/SKU, IP, NSG, VNet e Storage Account.
-4. URL pública funcionando e template ARM usado na implantação.
-
-Capturas de tela devem ser feitas depois do deploy na assinatura do aluno e anexadas ao repositório/apresentação; não há capturas fabricadas ou recurso Azure ativo garantido pelo repositório.
+1. [Captura da página em jogo](evidence-homepage.png), tirada no Chromium depois de carregar o motor e o IWAD Freedoom. A imagem mostra o mapa Freedoom Phase 1 em execução, além do ranking retornado pela API.
+2. A implantação pública respondeu `GET /api/health` com `200 {"database":"sqlite","status":"ok"}`, `POST /api/scores` com `201` e `GET /api/scores` com o registro persistido.
+3. O deploy foi feito por ARM/Azure CLI; URL pública, SKU, região e nomes dos recursos estão no README. A validação da rede/VM e o cloud-init foram conferidos via Azure CLI.
+4. Para capturas do Portal Azure (Resource Group, VM, NSG, VNet e Storage), use sua sessão autenticada. Não inclua segredos em capturas.
 
 ## 10. Referências
 
