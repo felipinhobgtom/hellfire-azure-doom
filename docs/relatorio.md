@@ -93,13 +93,15 @@ SQLite cria a tabela na primeira requisição. `PRAGMA journal_mode=WAL` melhora
 
 ### Pré-requisitos
 
-Nix com flakes habilitados, `gh` autenticado, Azure CLI e acesso a uma assinatura Azure com cota para B-series, IP, VNet e Storage. A raiz do recurso precisa estar publicada como repositório GitHub **público** porque cloud-init clona a URL no bootstrap.
+Pré-requisitos para implantação: Azure CLI instalado em qualquer máquina (Linux, macOS, Windows/WSL ou Azure Cloud Shell), sessão/autorização Azure com permissões para criar VM, rede, IP e Storage, e cota disponível para SKU B-series. O código precisa estar em repositório GitHub **público** porque cloud-init clona a URL no bootstrap. GitHub CLI é usado apenas para publicar o repositório, não para implantar. Nix é opcional.
 
 ### Publicar e deploy
 
 ```bash
+# Opcional: publicar a partir da raiz do projeto
 gh repo create hellfire-azure-doom --public --source=. --remote=origin --push
-nix develop
+
+# Disponha az-cli no PATH e autentique (az login no workstation; Cloud Shell já autenticada)
 az login
 az account show
 export AZURE_VM_PASSWORD='Senha-forte-que-atenda-a-politica'

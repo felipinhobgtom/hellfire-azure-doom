@@ -6,12 +6,13 @@ Projeto acadêmico de ponta a ponta: jogo de tiro retrô original no navegador, 
 
 ## Executar localmente
 
+Para desenvolvimento, instale Python 3.12+ e execute `pip install -r requirements.txt`. Opcionalmente, `nix develop` fornece Python, dependências e Azure CLI; **Nix não é requisito de execução nem de deploy**.
+
 ```bash
-nix develop                 # Python, Flask, Gunicorn e Azure CLI via Nix
 python app.py                # http://localhost:8000
 ```
 
-Ou com Docker:
+Também pode executar com Docker sem Nix:
 
 ```bash
 docker build -t hellfire .
