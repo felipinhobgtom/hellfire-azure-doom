@@ -158,8 +158,8 @@ docs/relatorio.pdf     exportação para entrega
 ## 9. Evidências
 
 1. [Captura da página em jogo](evidence-homepage.png), feita no Chromium com Freedoom Phase 1 em execução, sem página de apresentação.
-2. A implantação pública respondeu `GET /api/health` com `200 {"database":"sqlite","status":"ok"}`, `POST /api/scores` com `201` e `GET /api/scores` com o registro persistido.
-3. O deploy foi feito por ARM/Azure CLI; URL pública, SKU, região e nomes dos recursos estão no README. A validação da rede/VM e o cloud-init foram conferidos via Azure CLI.
+2. A URL HTTPS apresentou certificado válido no Chromium/curl; a rota `/api/health` respondeu `200 {"database":"sqlite","status":"ok"}`. HTTP redireciona para HTTPS (`308`); JS, WASM e pacote de dados foram servidos pelo domínio.
+3. A API respondeu `POST /api/scores` com `201` e `GET /api/scores` com o registro persistido. O deploy foi feito por ARM/Azure CLI; URL pública, SKU, região e recursos estão no README.
 4. Para capturas do Portal Azure (Resource Group, VM, NSG, VNet e Storage), use sua sessão autenticada. Não inclua segredos em capturas.
 
 ## 10. Referências
@@ -169,3 +169,4 @@ docs/relatorio.pdf     exportação para entrega
 - Microsoft Learn, VM sizes: https://learn.microsoft.com/azure/virtual-machines/sizes
 - Chocolate Doom (referência de port, GPL): https://github.com/midzer/chocolate-doom
 - SQLite: https://www.sqlite.org/docs.html
+- Caddy, Automatic HTTPS: https://caddyserver.com/docs/automatic-https
