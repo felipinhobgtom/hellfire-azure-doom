@@ -1,0 +1,85 @@
+name: CI/CD
+
+on:
+  push:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hellfire-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  ci:
+    name: Tests and image build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Test API
+        run: python -m unittest discover -s tests -v
+
+      - name: Validate client and deployment files
+        run: |
+          node --check web/game.js
+          bash -n deploy.sh scripts/build_wasm.sh scripts/deploy_vm.sh
+          python -c 'import json; json.load(open("infra/main.json")); json.load(open("infra/parameters.json"))'
+
+      - name: Build application image
+        run: docker build --tag hellfire:ci .
+
+  deploy:
+    name: Deploy Azure VM
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: ci
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Sign in to Azure with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Update VM from main
+        env:
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          AZURE_VM_NAME: ${{ vars.AZURE_VM_NAME }}
+        run: |
+          remote_script="$(<scripts/deploy_vm.sh)"
+          az vm run-command invoke \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --name "$AZURE_VM_NAME" \
+            --command-id RunShellScript \
+            --scripts "$remote_script" \
+            --output table
+
+      - name: Smoke test HTTPS deployment
+        env:
+          AZURE_SITE_URL: ${{ vars.AZURE_SITE_URL }}
+        run: |
+          curl --fail --silent --show-error --retry 12 --retry-delay 5 --retry-connrefused \
+            "$AZURE_SITE_URL/api/health"
+          curl --fail --silent --show-error --retry 12 --retry-delay 5 --retry-connrefused \
+            "$AZURE_SITE_URL/doom/chocolate-doom.wasm" --output /dev/null

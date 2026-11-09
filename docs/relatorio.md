@@ -125,6 +125,14 @@ curl -fsS -X POST https://hellfire-azure-doom-felipinhobgtom.mexicocentral.cloud
 
 Para obter o IP depois: `az vm list-ip-addresses -g "${AZURE_RESOURCE_GROUP:-rg-hellfire-demo}" -n hellfire-vm -o table`. Diagnóstico: `az vm boot-diagnostics get-boot-log -g "${AZURE_RESOURCE_GROUP:-rg-hellfire-demo}" -n hellfire-vm`; use console serial para inspeção. Remoção completa: `az group delete -n "${AZURE_RESOURCE_GROUP:-rg-hellfire-demo}" --yes --no-wait`. Para encerrar a demonstração publicada: `az group delete -n rg-hellfire-mexico --yes --no-wait`.
 
+### CI/CD GitHub Actions
+
+O workflow `.github/workflows/cicd.yml` roda em cada push e pull request para `main`: testes Flask/SQLite, checagem de sintaxe JavaScript/shell/JSON e build da imagem Docker. Push na branch `main` executa a entrega contínua após CI passar.
+
+O job de deploy usa `azure/login@v2` com OIDC e `id-token: write`; não armazena client secret no GitHub. A credencial Entra confia no subject `repo:felipinhobgtom/hellfire-azure-doom:ref:refs/heads/main` e tem `Virtual Machine Contributor` somente na VM. Em seguida, chama `az vm run-command invoke`, executa `scripts/deploy_vm.sh`, reconstrói o container na VM mantendo `/opt/hellfire/data` e reinicia o Caddy. O workflow valida a rota de health e o artefato WASM pelo hostname HTTPS.
+
+Variáveis necessárias no repositório: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP`, `AZURE_VM_NAME` e `AZURE_SITE_URL`.
+
 ## 7. Desenvolvimento/testes
 
 ```bash
@@ -139,20 +147,21 @@ A API usa SQLite embutido no Python. Em produção, Gunicorn executa um worker c
 ## 8. Organização do repositório
 
 ```text
-app.py                 API Flask + SQLite
-web/index.html         jogo WebAssembly em tela cheia
-web/game.js            inicialização direta de Chocolate Doom
-web/doom/              artefatos JS/WASM/data do Chocolate Doom
-web/assets/             IWAD Freedoom + licença
-vendor/chocolate-doom/  submódulo upstream GPL-2.0
-Dockerfile             imagem de produção
-Caddyfile              proxy HTTPS e reverse proxy
-flake.nix              ambiente Nix reproduzível
-deploy.sh              orquestração Azure CLI
-infra/main.json        recursos ARM
-infra/parameters.json  parâmetros sem credenciais
-docs/relatorio.md      documentação completa
-docs/relatorio.pdf     exportação para entrega
+app.py                    API Flask + SQLite
+web/index.html            jogo WebAssembly em tela cheia
+web/game.js               inicialização direta de Chocolate Doom
+web/doom/                 artefatos JS/WASM/data do Chocolate Doom
+web/assets/               IWAD Freedoom + licença
+vendor/chocolate-doom/    submódulo upstream GPL-2.0
+Dockerfile                imagem da aplicação
+Caddyfile                 proxy HTTPS e reverse proxy
+.github/workflows/cicd.yml CI e CD com GitHub Actions/OIDC
+scripts/deploy_vm.sh      atualização da VM via Azure Run Command
+deploy.sh                 orquestração inicial Azure CLI
+infra/main.json           recursos ARM
+infra/parameters.json     parâmetros sem credenciais
+docs/relatorio.md         documentação completa
+docs/relatorio.pdf        exportação para entrega
 ```
 
 ## 9. Evidências
